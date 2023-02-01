@@ -12,7 +12,7 @@ use crate::msgs::base::Payload;
 use crate::msgs::enums::{AlertDescription, Compression, ContentType};
 use crate::msgs::enums::{ECPointFormat, PSKKeyExchangeMode};
 use crate::msgs::enums::{ExtensionType, HandshakeType};
-use crate::msgs::handshake::{CertificateStatusRequest, ClientSessionTicket, SCTList};
+use crate::msgs::handshake::{CertificateStatusRequest, ClientSessionTicket, SCTList, UnknownExtension};
 use crate::msgs::handshake::{ClientExtension, HasServerExtensions};
 use crate::msgs::handshake::{ClientHelloPayload, HandshakeMessagePayload, HandshakePayload};
 use crate::msgs::handshake::{ConvertProtocolNameList, ProtocolNameList};
@@ -227,8 +227,8 @@ fn emit_client_hello_for_retry(
     assert!(!supported_versions.is_empty());
 
     let mut exts = vec![
-        ClientExtension::SupportedVersions(supported_versions),
-        ClientExtension::ECPointFormats(ECPointFormatList::supported()),
+        
+        //ClientExtension::ECPointFormats(ECPointFormatList::supported()),
         ClientExtension::NamedGroups(
             config
                 .kx_groups
@@ -236,17 +236,22 @@ fn emit_client_hello_for_retry(
                 .map(|skxg| skxg.name)
                 .collect(),
         ),
+        ClientExtension::CertificateStatusRequest(CertificateStatusRequest::build_ocsp()),
         ClientExtension::SignatureAlgorithms(
             config
                 .verifier
                 .supported_verify_schemes(),
         ),
-        ClientExtension::ExtendedMasterSecretRequest,
-        ClientExtension::CertificateStatusRequest(CertificateStatusRequest::build_ocsp()),
+        // PSK Key Exchange Mode: PSK with (EC)DHE key establishment (psk_dhe_ke) (1) in id 45
+        //ClientExtension::
+
+        //ClientExtension::ExtendedMasterSecretRequest,
+        //ClientExtension::CertificateStatusRequest(CertificateStatusRequest::build_ocsp()),
     ];
 
     if let (Some(sni_name), true) = (server_name.for_sni(), config.enable_sni) {
-        exts.push(ClientExtension::make_sni(sni_name));
+        exts.insert(0, ClientExtension::make_sni(sni_name));
+        //exts.push(ClientExtension::make_sni(sni_name));
     }
 
     if may_send_sct_list {
@@ -259,16 +264,41 @@ fn emit_client_hello_for_retry(
         exts.push(ClientExtension::KeyShare(vec![key_share]));
     }
 
-    if let Some(cookie) = retryreq.and_then(HelloRetryRequest::get_cookie) {
-        exts.push(ClientExtension::Cookie(cookie.clone()));
-    }
-
-    if support_tls13 && config.enable_tickets {
+    if support_tls13 /*&& config.enable_tickets*/ {
         // We could support PSK_KE here too. Such connections don't
         // have forward secrecy, and are similar to TLS1.2 resumption.
         let psk_modes = vec![PSKKeyExchangeMode::PSK_DHE_KE];
         exts.push(ClientExtension::PresharedKeyModes(psk_modes));
     }
+
+    exts.push(ClientExtension::SupportedVersions(supported_versions));
+
+    if let Some(cookie) = retryreq.and_then(HelloRetryRequest::get_cookie) {
+        exts.push(ClientExtension::Cookie(cookie.clone()));
+    }
+
+    /*
+        Extension: compress_certificate (len=3)
+            Type: compress_certificate (27)
+            Length: 3
+            Algorithms Length: 2
+            Algorithm: zlib (1)
+    */
+    exts.push(ClientExtension::Unknown(UnknownExtension {
+        typ: ExtensionType::Unknown(27),
+        payload: Payload(vec![0x02, 0x00, 0x01]),
+    }));
+
+    /*
+        Extension: padding (len=221)
+            Type: padding (21)
+            Length: 221
+            Padding Data: 000000000000000000000000000000000000000000000000000000000000000000000000…
+    */
+    exts.push(ClientExtension::Unknown(UnknownExtension {
+        typ: ExtensionType::Unknown(21),
+        payload: Payload(vec![0x00; 221]),
+    }));
 
     if !config.alpn_protocols.is_empty() {
         exts.push(ClientExtension::Protocols(ProtocolNameList::from_slices(
@@ -338,7 +368,7 @@ fn emit_client_hello_for_retry(
         .map(|cs| cs.suite())
         .collect();
     // We don't do renegotiation at all, in fact.
-    cipher_suites.push(CipherSuite::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
+    //cipher_suites.push(CipherSuite::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
 
     let mut chp = HandshakeMessagePayload {
         typ: HandshakeType::ClientHello,

@@ -96,5 +96,10 @@ pub static SECP384R1: SupportedKxGroup = SupportedKxGroup {
     agreement_algorithm: &ring::agreement::ECDH_P384,
 };
 
+pub(crate) static SECP521R1: SupportedKxGroup = SupportedKxGroup {
+    name: NamedGroup::secp521r1,
+    agreement_algorithm: &ring::agreement::ECDH_P384, // TODO: This is not real, but it's the one that exists in ring
+};
+
 /// A list of all the key exchange groups supported by rustls.
-pub static ALL_KX_GROUPS: [&SupportedKxGroup; 3] = [&X25519, &SECP256R1, &SECP384R1];
+pub static ALL_KX_GROUPS: [&SupportedKxGroup; 4] = [&X25519, &SECP256R1, &SECP384R1, &SECP521R1];
